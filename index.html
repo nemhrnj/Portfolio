@@ -1,3 +1,4 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <!DOCTYPE html>
 <html lang="en" class="scroll-smooth antialiased">
 <head>
@@ -90,6 +91,7 @@
         @media (hover: none) {
             body, a, button, input, textarea, select, label, [role="button"], [onclick] { cursor: auto; }
             .render-cursor { display: none; }
+            #intro { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         }
         </style>
 </head>
@@ -164,11 +166,16 @@
                 <div class="space-y-5">
                     <p class="text-[10px] md:text-xs uppercase tracking-[0.35em] text-[#8A8683] font-semibold">About</p>
                     <h2 class="text-2xl sm:text-3xl md:text-4xl font-light tracking-tight leading-snug text-[#262220]">
-                        CG Generalist, <span class="italic font-extralight text-[#6B8062]">10+ years</span> in the craft.
+                        Senior CG Artist <span class="text-[#6B8062] font-extralight">|</span> <span class="italic font-extralight text-[#6B8062]">3D Animator &amp; ArchViz Artist</span>
                     </h2>
                     <p class="text-sm md:text-base text-[#726E6C] font-light leading-relaxed max-w-xl">
-                        My path into 3D started with a love for video games and a degree in Graphic Design — today I bring that same curiosity to every architectural visualization. I approach each project from a broad perspective before focusing on every last detail, with clear communication at the core of how I work with clients and teams.
+                        Versatile Senior CG Artist with 12+ years of experience delivering high-end 3D animation and photorealistic renders across architectural and creative industries.
                     </p>
+                    <ul class="space-y-3 max-w-xl text-sm md:text-base text-[#726E6C] font-light leading-relaxed">
+                        <li><span class="font-medium text-[#262220]">Approach:</span> Balances big-picture creative direction with meticulous pixel-perfect detail.</li>
+                        <li><span class="font-medium text-[#262220]">Collaboration:</span> Strong focus on clear communication with clients and cross-functional teams to bring complex visual concepts to life.</li>
+                        <li><span class="font-medium text-[#262220]">Passion:</span> Long-standing dedication to cinematic storytelling and cutting-edge 3D workflows.</li>
+                    </ul>
                 </div>
 
                 <div class="grid sm:grid-cols-2 gap-8 pt-2">
@@ -631,6 +638,10 @@
             let activeSlideIndex = 0;
 
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            // phones/tablets: no hover to follow, so they get a time-driven version of the same render
+            // (autoplay + tap). Every desktop code path below is guarded by this flag and left as is.
+            const isTouchPrimary = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+            const autoplayEnabled = isTouchPrimary && !reduceMotion;
 
             // preload + decode every slide up front, keeping the actual <img> element around
             // so it can be drawn straight into the canvas with no extra decode cost mid-transition
@@ -646,18 +657,29 @@
                 preloadCache[src] = p;
                 return p;
             }
-            allSlides.forEach(preload);
+            if (isTouchPrimary) {
+                const warm = () => allSlides.forEach(preload);
+                const later = () => ('requestIdleCallback' in window ? requestIdleCallback(warm, { timeout: 2500 }) : setTimeout(warm, 1500));
+                if (document.readyState === 'complete') later(); else window.addEventListener('load', later, { once: true });
+            } else {
+                allSlides.forEach(preload);
+            }
 
             // fixed-pixel V-Ray-style bucket grid — a canvas instead of hundreds/thousands of
             // individually-animated DOM/SVG nodes, so the reveal stays smooth regardless of grid density
             const BUCKET = 23; // fixed pixel size — stays constant and perfectly square across any resize
             let cells = [];
-            let boxW = 0, boxH = 0;
+            let boxW = 0, boxH = 0, gridDpr = 0;
+            let needsRebuild = false;
 
             function buildGrid() {
-                const dpr = window.devicePixelRatio || 1;
-                boxW = introSection.clientWidth;
-                boxH = introSection.clientHeight;
+                // phones report DPR 3 but the 1600px slides carry nothing past 2x — a 2x canvas is a third lighter to redraw
+                const dpr = Math.min(window.devicePixelRatio || 1, isTouchPrimary ? 2 : Infinity);
+                const w0 = introSection.clientWidth, h0 = introSection.clientHeight;
+                if (cells.length && w0 === boxW && h0 === boxH && dpr === gridDpr) return;
+                gridDpr = dpr;
+                boxW = w0;
+                boxH = h0;
                 canvas.width = Math.max(1, Math.round(boxW * dpr));
                 canvas.height = Math.max(1, Math.round(boxH * dpr));
                 canvas.style.width = boxW + 'px';
@@ -677,7 +699,7 @@
             buildGrid();
             let resizeTimer = null;
             window.addEventListener('resize', () => {
-                if (transitioning) return; // avoid rebuilding mid-reveal; next transition will rebuild cleanly
+                if (transitioning) { needsRebuild = true; return; } // rebuilt as soon as the reveal finishes
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(buildGrid, 150);
             }, { passive: true });
@@ -767,13 +789,20 @@
             function beginSettle() {
                 settling = true;
                 introBase.src = pendingSrc; // identical pixels to what the canvas already shows — no visible change
-                requestAnimationFrame(() => {
+                const runFade = () => requestAnimationFrame(() => {
                     canvas.style.transition = reduceMotion ? 'none'
+                        : isTouchPrimary ? `opacity ${FADE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
                         : `opacity ${FADE_MS}ms cubic-bezier(0.22, 1, 0.36, 1), filter ${FADE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
                     canvas.style.opacity = '0';
-                    canvas.style.filter = reduceMotion ? 'none' : 'blur(6px)';
+                    canvas.style.filter = (reduceMotion || isTouchPrimary) ? 'none' : 'blur(6px)';
                 });
-                setTimeout(finishReveal, reduceMotion ? 0 : FADE_MS);
+                if (isTouchPrimary && introBase.decode) {
+                    const go = () => { runFade(); setTimeout(finishReveal, reduceMotion ? 0 : FADE_MS + 40); };
+                    introBase.decode().then(go, go);
+                } else {
+                    runFade();
+                    setTimeout(finishReveal, reduceMotion ? 0 : FADE_MS);
+                }
             }
 
             function finishReveal() {
@@ -788,6 +817,8 @@
                 pendingIndex = null; pendingSrc = null; nextImg = null;
                 transitioning = false;
                 settling = false;
+                if (needsRebuild) { needsRebuild = false; buildGrid(); }
+                if (autoplayEnabled) scheduleAutoplay();
             }
 
             const RADIUS = 130; // px around the cursor that pops buckets open as it moves — the "paintbrush" size
@@ -890,6 +921,59 @@
                 });
             }
 
+            // ---- touch devices -------------------------------------------------------------------------
+            // No cursor to follow, so the render is driven by time instead: every bucket gets a start
+            // delay by its distance rank from an origin point, which makes the same radial "paint"
+            // that the mouse produces on desktop, filling the frame at a steady pace.
+            const AUTOPLAY_MS = 3800;    // pause on a finished slide before the next one starts rendering
+            const AUTO_SPREAD_MS = 2200; // how long one autoplay render takes to sweep the whole frame
+            const TAP_SPREAD_MS = 1200;  // a tap renders faster, it's a direct request
+            let autoTimer = null;
+            let heroVisible = true;
+
+            function startTimedReveal(nextIndex, ox, oy, spreadMs) {
+                if (transitioning || nextIndex === activeSlideIndex) return;
+                transitioning = true;
+                const nextSrc = allSlides[nextIndex];
+                preload(nextSrc).then(() => requestAnimationFrame(() => {
+                    pendingIndex = nextIndex;
+                    pendingSrc = nextSrc;
+                    nextImg = imageEls[nextSrc];
+                    settling = false;
+                    stopIdleExpand();
+                    const now = performance.now();
+                    cells.forEach(cell => { cell.start = -1; });
+                    const ordered = cells
+                        .map(cell => ({ cell, d: Math.hypot(cell.cx - ox, cell.cy - oy) }))
+                        .sort((a, b) => a.d - b.d);
+                    const last = Math.max(1, ordered.length - 1);
+                    ordered.forEach((entry, i) => {
+                        // a little jitter keeps the front organic, like real buckets finishing out of step
+                        const delay = reduceMotion ? 0 : Math.max(0, (i / last) * spreadMs + (Math.random() - 0.5) * 70);
+                        triggerCell(entry.cell, delay, now);
+                    });
+                    kickLoop();
+                }));
+            }
+
+            function scheduleAutoplay(delay) {
+                clearTimeout(autoTimer);
+                if (!autoplayEnabled) return;
+                autoTimer = setTimeout(autoplayTick, delay == null ? AUTOPLAY_MS : delay);
+            }
+
+            function autoplayTick() {
+                autoTimer = null;
+                // off-screen or backgrounded: stay quiet (the observers below restart it) — saves battery
+                if (transitioning || document.hidden || !heroVisible) return;
+                startTimedReveal(
+                    (activeSlideIndex + 1) % allSlides.length,
+                    boxW * (0.15 + Math.random() * 0.7),
+                    boxH * (0.15 + Math.random() * 0.7),
+                    AUTO_SPREAD_MS
+                );
+            }
+
             let accumulated = 0;
             let lastX = null, lastY = null;
             const THRESHOLD = 220;
@@ -905,6 +989,7 @@
             // (or leaves), the idle ripple takes over and keeps expanding from that same last spot
             // on its own, so the render is never left frozen half-done
             document.addEventListener('pointermove', e => {
+                if (isTouchPrimary && e.pointerType === 'touch') return; // finger drags are scrolls on phones, not paint
                 if (!transitioning) {
                     if (lastX !== null) {
                         accumulated += Math.hypot(e.clientX - lastX, e.clientY - lastY);
@@ -923,15 +1008,39 @@
                     startIdleExpand(e.clientX, e.clientY);
                 }
             }, { passive: true });
-            // touch has no hover to follow, so a tap simply reveals the whole frame at once
-            introSection.addEventListener('touchstart', e => {
-                if (!transitioning) {
-                    const t = e.touches[0];
-                    revealTo((activeSlideIndex + 1) % allSlides.length, t ? t.clientX : null, t ? t.clientY : null, true);
+            if (!isTouchPrimary) {
+                // touchscreen on a hover-capable machine: a tap simply reveals the whole frame at once
+                introSection.addEventListener('touchstart', e => {
+                    if (!transitioning) {
+                        const t = e.touches[0];
+                        revealTo((activeSlideIndex + 1) % allSlides.length, t ? t.clientX : null, t ? t.clientY : null, true);
+                    }
+                }, { passive: true });
+            } else {
+                // phones: a real tap (click never fires for scrolls) renders the next slide outward from the tap point
+                introSection.addEventListener('click', e => {
+                    if (transitioning || e.target.closest('a, button')) return;
+                    const rect = introSection.getBoundingClientRect();
+                    clearTimeout(autoTimer);
+                    startTimedReveal((activeSlideIndex + 1) % allSlides.length, e.clientX - rect.left, e.clientY - rect.top, TAP_SPREAD_MS);
+                });
+                if (autoplayEnabled) {
+                    if ('IntersectionObserver' in window) {
+                        new IntersectionObserver(entries => {
+                            heroVisible = entries[0].isIntersecting;
+                            if (heroVisible && !transitioning && autoTimer == null) scheduleAutoplay(1200);
+                        }, { threshold: 0.35 }).observe(introSection);
+                    }
+                    document.addEventListener('visibilitychange', () => {
+                        if (!document.hidden && heroVisible && !transitioning && autoTimer == null) scheduleAutoplay(1200);
+                    });
+                    scheduleAutoplay(2800);
                 }
-            }, { passive: true });
+            }
 
         })();
 </script>
 </body>
 </html>
+
+</body></html>
